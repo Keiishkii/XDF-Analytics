@@ -1,5 +1,7 @@
 from __future__ import annotations
 from MINE.Analysis import SessionAnalytics
+from MINE.Log import Log
+from numpy.typing import NDArray
 
 import scipy.signal as signal
 import pandas as pd
@@ -19,6 +21,8 @@ class PPG_Event:
         pass
 
 class StreamProcesses:
+
+    #region [ Stream Generation ]
     @staticmethod
     def butterworth_filter(session: SessionAnalytics, input_stream: str, output_stream: str):
         """
@@ -122,6 +126,141 @@ class StreamProcesses:
 
         output_stream_data["Value"] = output_stream_data["Value"].astype(object)
         session.stream_data_dictionary[output_stream] = output_stream_data
+
+    @staticmethod
+    def generate_peak_interval_duration_stream(session: SessionAnalytics, input_stream: str, output_stream: str):
+        ppg_annotated_peaks_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
+
+        timestamps = ppg_annotated_peaks_stream["Timestamp"].to_numpy()
+
+        peak_displacements = np.diff(timestamps)
+        mid_point_timestamps =  (timestamps[:-1] + timestamps[1:]) / 2
+
+        session.stream_data_dictionary[output_stream] = pd.DataFrame({
+            "Value": peak_displacements,
+            "Timestamp": mid_point_timestamps
+        })
+
+    @staticmethod
+    def generate_interval_differences_stream(session: SessionAnalytics, input_stream: str, output_stream: str):
+        ppg_peak_interval_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
+
+        values = ppg_peak_interval_stream["Value"].to_numpy()
+        timestamps = ppg_peak_interval_stream["Timestamp"].to_numpy()
+
+        interval_differences = np.diff(values)
+        mid_point_timestamps =  (timestamps[:-1] + timestamps[1:]) / 2
+
+        session.stream_data_dictionary[output_stream] = pd.DataFrame({
+            "Value": interval_differences,
+            "Timestamp": mid_point_timestamps
+        })
+
+    @staticmethod
+    def generate_rmssd_stream(session: SessionAnalytics, input_stream: str, output_stream: str, window_size: float = 20, step_size: float = 5):
+        ppg_interval_differences_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
+
+        input_values = ppg_interval_differences_stream["Value"].to_numpy()
+        intput_timestamps = ppg_interval_differences_stream["Timestamp"].to_numpy()
+
+        output_values = []
+        output_timestamps = []
+
+        start_time = intput_timestamps[0]
+        end_time = intput_timestamps[-1]
+
+        sample_point = start_time + (window_size / 2)
+        while sample_point < (end_time - (window_size / 2)):
+            sample_mask = (intput_timestamps >= sample_point - (window_size / 2)) & (intput_timestamps <= sample_point + (window_size / 2))
+            filtered_values = input_values[sample_mask]
+
+            converted_samples = filtered_values * 1000
+            squared_differences= converted_samples ** 2
+
+            squared_means = np.mean(squared_differences)
+            rmssd = np.sqrt(squared_means)
+
+            output_values = np.append(output_values, rmssd)
+            output_timestamps = np.append(output_timestamps, sample_point)
+
+            sample_point = sample_point + step_size
+
+        session.stream_data_dictionary[output_stream] = pd.DataFrame({
+            "Value": output_values,
+            "Timestamp": output_timestamps
+        })
+
+
+    @staticmethod
+    def generate_sdnn_stream(session: SessionAnalytics, input_stream: str, output_stream: str, window_size: float = 20, step_size: float = 5):
+        ppg_interval_differences_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
+
+        input_values = ppg_interval_differences_stream["Value"].to_numpy()
+        intput_timestamps = ppg_interval_differences_stream["Timestamp"].to_numpy()
+
+        output_values = []
+        output_timestamps = []
+
+        start_time = intput_timestamps[0]
+        end_time = intput_timestamps[-1]
+
+        sample_point = start_time + (window_size / 2)
+        while sample_point < (end_time - (window_size / 2)):
+            sample_mask = (intput_timestamps >= sample_point - (window_size / 2)) & (intput_timestamps <= sample_point + (window_size / 2))
+            filtered_values = input_values[sample_mask]
+
+            converted_samples = filtered_values * 1000
+            mean = np.mean(converted_samples)
+
+            differences_from_the_mean = filtered_values - mean
+            squared_differences_from_the_mean = np.square(differences_from_the_mean)
+
+            mean_squared_difference = np.mean(squared_differences_from_the_mean)
+            sdnn = np.sqrt(mean_squared_difference)
+
+            output_values = np.append(output_values, sdnn)
+            output_timestamps = np.append(output_timestamps, sample_point)
+
+            sample_point = sample_point + step_size
+
+        session.stream_data_dictionary[output_stream] = pd.DataFrame({
+            "Value": output_values,
+            "Timestamp": output_timestamps
+        })
+    #endregion
+
+    #region [ Sampling ]
+    @staticmethod
+    def get_sdnn_sample_from_annotated_ppg(session: SessionAnalytics, input_stream: str, start_time: float, end_time: float) -> float:
+        annotated_ppg_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
+        annotated_ppg_stream_in_range = annotated_ppg_stream.loc[annotated_ppg_stream["Timestamp"].between(start_time, end_time)]
+
+        ppg_peak_timestamps: NDArray[float] = annotated_ppg_stream_in_range["Timestamp"].to_numpy()
+
+        beat_differences: NDArray[float] = np.diff(ppg_peak_timestamps)
+        beat_differences_in_milliseconds: NDArray[float] = beat_differences * 1000
+
+        standard_deviation: float = float(np.std(beat_differences_in_milliseconds))
+        return standard_deviation
+
+
+    @staticmethod
+    def get_rmssd_sample_from_annotated_ppg(session: SessionAnalytics, input_stream: str, start_time: float, end_time: float) -> float:
+        annotated_ppg_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
+        annotated_ppg_stream_in_range = annotated_ppg_stream.loc[annotated_ppg_stream["Timestamp"].between(start_time, end_time)]
+
+        ppg_peak_timestamps: NDArray[float] = annotated_ppg_stream_in_range["Timestamp"].to_numpy()
+
+        beat_differences: NDArray[float] = np.diff(ppg_peak_timestamps)
+        sequential_beat_differences: NDArray[float] = np.diff(beat_differences)
+        sequential_beat_differences_in_milliseconds: NDArray[float] = sequential_beat_differences * 1000
+
+        squared_sequential_differences = sequential_beat_differences_in_milliseconds ** 2
+        mean: float = np.mean(squared_sequential_differences)
+        root_of_mean: float = np.sqrt(mean)
+
+        return root_of_mean
+    #endregion
 
 
 
