@@ -1,7 +1,7 @@
 pyxdf~=1.17.0
 pandas~=2.3.0
-ipython~=9.3.0
-matplotlib~=3.10.3
-scipy~=1.16.0
-numpy~=2.3.0
+ipython==8.18.1
+matplotlib~=3.10.0
+scipy~=1.13.0
+numpy~=2.2.0
 tqdm~=4.67.1

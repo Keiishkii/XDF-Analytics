@@ -21,7 +21,6 @@ class PPG_Event:
         pass
 
 class StreamProcesses:
-
     #region [ Stream Generation ]
     @staticmethod
     def butterworth_filter(session: SessionAnalytics, input_stream: str, output_stream: str):
@@ -96,11 +95,15 @@ class StreamProcesses:
             local_valleys: np.ndarray[int] = signal.find_peaks(-event_segment, prominence=0.05)[0]
             diastolic_trough = systolic_peak + local_valleys[0] if len(local_valleys) > 0 else None
 
-            ppg_event.diastolic_peak_value = values[diastolic_trough] if diastolic_trough else None
-            ppg_event.diastolic_trough_timestamp_offset = timestamps[diastolic_trough] - ppg_event_timestamp if diastolic_trough else None
+            if diastolic_trough is not None:
+                ppg_event.diastolic_peak_value = values[diastolic_trough]
+                ppg_event.diastolic_trough_timestamp_offset = timestamps[diastolic_trough] - ppg_event_timestamp
+            else:
+                ppg_event.diastolic_peak_value = None
+                ppg_event.diastolic_trough_timestamp_offset = None
             #endregion
 
-            if diastolic_trough:
+            if diastolic_trough :
                 tail_segment = values[diastolic_trough: next_systolic_peak]
 
                 #region [ Calculate Diastolic Peak ]
@@ -128,7 +131,52 @@ class StreamProcesses:
         session.stream_data_dictionary[output_stream] = output_stream_data
 
     @staticmethod
-    def generate_peak_interval_duration_stream(session: SessionAnalytics, input_stream: str, output_stream: str):
+    def generate_heartrate_from_window(session: SessionAnalytics, input_stream: str, output_stream: str,
+                                  window_size: float = 20, step_size: float = 5):
+
+        ppg_annotated_peaks_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
+
+        ppg_annotation_values = ppg_annotated_peaks_stream["Value"].to_numpy()  # RR intervals (seconds)
+        ppg_annotation_timestamps = ppg_annotated_peaks_stream["Timestamp"].to_numpy()  # midpoint timestamps
+
+        output_values = []
+        output_timestamps = []
+
+        start_time = ppg_annotation_timestamps[0]
+        end_time = ppg_annotation_timestamps[-1]
+
+        sample_point = start_time + (window_size / 2)
+
+        while sample_point < (end_time - (window_size / 2)):
+            mask = (
+                    (ppg_annotation_timestamps >= sample_point - (window_size / 2)) &
+                    (ppg_annotation_timestamps <= sample_point + (window_size / 2))
+            )
+
+            # Extract PPG_Event objects in the window
+            window_events = ppg_annotation_values[mask]
+
+            # Count systolic peaks
+            num_systolic_peaks = sum(
+                1 for ev in window_events
+                if ev.systolic_peak_value is not None and ev.systolic_peak_value > 0
+            )
+
+            # Convert to BPM
+            heartrate = num_systolic_peaks * (60.0 / window_size)
+
+            output_values.append(heartrate)
+            output_timestamps.append(sample_point)
+
+            sample_point += step_size
+
+        session.stream_data_dictionary[output_stream] = pd.DataFrame({
+            "Value": output_values,
+            "Timestamp": output_timestamps
+        })
+
+    @staticmethod
+    def generate_rr_intervals(session: SessionAnalytics, input_stream: str, output_stream: str):
         ppg_annotated_peaks_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
 
         timestamps = ppg_annotated_peaks_stream["Timestamp"].to_numpy()
@@ -142,86 +190,97 @@ class StreamProcesses:
         })
 
     @staticmethod
-    def generate_interval_differences_stream(session: SessionAnalytics, input_stream: str, output_stream: str):
-        ppg_peak_interval_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
+    def generate_rmssd(session: SessionAnalytics, input_stream: str, output_stream: str,
+                       window_size: float = 20, step_size: float = 5):
 
-        values = ppg_peak_interval_stream["Value"].to_numpy()
-        timestamps = ppg_peak_interval_stream["Timestamp"].to_numpy()
+        rr_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
 
-        interval_differences = np.diff(values)
-        mid_point_timestamps =  (timestamps[:-1] + timestamps[1:]) / 2
-
-        session.stream_data_dictionary[output_stream] = pd.DataFrame({
-            "Value": interval_differences,
-            "Timestamp": mid_point_timestamps
-        })
-
-    @staticmethod
-    def generate_rmssd_stream(session: SessionAnalytics, input_stream: str, output_stream: str, window_size: float = 20, step_size: float = 5):
-        ppg_interval_differences_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
-
-        input_values = ppg_interval_differences_stream["Value"].to_numpy()
-        intput_timestamps = ppg_interval_differences_stream["Timestamp"].to_numpy()
+        rr_values = rr_stream["Value"].to_numpy()  # RR intervals (seconds)
+        rr_timestamps = rr_stream["Timestamp"].to_numpy()  # midpoint timestamps
 
         output_values = []
         output_timestamps = []
 
-        start_time = intput_timestamps[0]
-        end_time = intput_timestamps[-1]
+        start_time = rr_timestamps[0]
+        end_time = rr_timestamps[-1]
 
         sample_point = start_time + (window_size / 2)
+
         while sample_point < (end_time - (window_size / 2)):
-            sample_mask = (intput_timestamps >= sample_point - (window_size / 2)) & (intput_timestamps <= sample_point + (window_size / 2))
-            filtered_values = input_values[sample_mask]
 
-            converted_samples = filtered_values * 1000
-            squared_differences= converted_samples ** 2
+            # Window mask
+            mask = (
+                    (rr_timestamps >= sample_point - (window_size / 2)) &
+                    (rr_timestamps <= sample_point + (window_size / 2))
+            )
 
-            squared_means = np.mean(squared_differences)
-            rmssd = np.sqrt(squared_means)
+            window_rr = rr_values[mask]
 
-            output_values = np.append(output_values, rmssd)
-            output_timestamps = np.append(output_timestamps, sample_point)
+            # --- Artifact removal (recommended) ---
+            # Remove RR intervals outside physiological range
+            window_rr = window_rr[(window_rr > 0.3) & (window_rr < 2.0)]
 
-            sample_point = sample_point + step_size
+            # Remove large successive jumps (> 200 ms)
+            if len(window_rr) >= 3:
+                diffs = np.diff(window_rr)
+                mask_artifact = np.insert(np.abs(diffs) < 0.2, 0, True)
+                window_rr = window_rr[mask_artifact]
+            # --------------------------------------
+
+            # Need at least 3 RR intervals to compute diff
+            if len(window_rr) >= 3:
+                diff_rr = np.diff(window_rr) * 1000  # convert to ms
+                rmssd = np.sqrt(np.mean(diff_rr ** 2))
+            else:
+                rmssd = np.nan
+
+            output_values.append(rmssd)
+            output_timestamps.append(sample_point)
+
+            sample_point += step_size
 
         session.stream_data_dictionary[output_stream] = pd.DataFrame({
             "Value": output_values,
             "Timestamp": output_timestamps
         })
 
-
     @staticmethod
-    def generate_sdnn_stream(session: SessionAnalytics, input_stream: str, output_stream: str, window_size: float = 20, step_size: float = 5):
-        ppg_interval_differences_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
+    def generate_sdnn(session: SessionAnalytics, input_stream: str, output_stream: str,
+                      window_size: float = 20, step_size: float = 5):
 
-        input_values = ppg_interval_differences_stream["Value"].to_numpy()
-        intput_timestamps = ppg_interval_differences_stream["Timestamp"].to_numpy()
+        rr_stream: pd.DataFrame = session.stream_data_dictionary[input_stream]
+
+        rr_values = rr_stream["Value"].to_numpy()  # RR intervals (seconds)
+        rr_timestamps = rr_stream["Timestamp"].to_numpy()  # midpoint timestamps
 
         output_values = []
         output_timestamps = []
 
-        start_time = intput_timestamps[0]
-        end_time = intput_timestamps[-1]
+        start_time = rr_timestamps[0]
+        end_time = rr_timestamps[-1]
 
         sample_point = start_time + (window_size / 2)
+
         while sample_point < (end_time - (window_size / 2)):
-            sample_mask = (intput_timestamps >= sample_point - (window_size / 2)) & (intput_timestamps <= sample_point + (window_size / 2))
-            filtered_values = input_values[sample_mask]
 
-            converted_samples = filtered_values * 1000
-            mean = np.mean(converted_samples)
+            mask = (
+                    (rr_timestamps >= sample_point - (window_size / 2)) &
+                    (rr_timestamps <= sample_point + (window_size / 2))
+            )
 
-            differences_from_the_mean = filtered_values - mean
-            squared_differences_from_the_mean = np.square(differences_from_the_mean)
+            window_rr = rr_values[mask]
 
-            mean_squared_difference = np.mean(squared_differences_from_the_mean)
-            sdnn = np.sqrt(mean_squared_difference)
+            # Need at least 2 RR intervals to compute SDNN
+            if len(window_rr) >= 2:
+                rr_ms = window_rr * 1000
+                sdnn = np.std(rr_ms)
+            else:
+                sdnn = np.nan
 
-            output_values = np.append(output_values, sdnn)
-            output_timestamps = np.append(output_timestamps, sample_point)
+            output_values.append(sdnn)
+            output_timestamps.append(sample_point)
 
-            sample_point = sample_point + step_size
+            sample_point += step_size
 
         session.stream_data_dictionary[output_stream] = pd.DataFrame({
             "Value": output_values,

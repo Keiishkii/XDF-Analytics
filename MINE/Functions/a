@@ -1,0 +1,90 @@
+{
+  "required_streams": [
+    {
+      "name": "Marker",
+      "type": "string"
+    },
+    {
+      "name": "PPG_GRN",
+      "type": "float"
+    }
+  ],
+  "required_markers": [
+    "Video: Be a floater, Event: VideoStart",
+    "Video: Be a floater, Event: VideoEnd",
+    "Video: RNLI Respect the water “Ladbible short film”, Event: VideoStart",
+    "Video: RNLI Respect the water “Ladbible short film”, Event: VideoEnd",
+    "Video: “Evans story”, Event: VideoStart",
+    "Video: “Evans story”, Event: VideoEnd",
+    "Video: “Little girl being rescued by RNLI”, Event: VideoStart",
+    "Video: “Little girl being rescued by RNLI”, Event: VideoEnd",
+    "Video: Alfie’s phone, Event: VideoStart",
+    "Video: Alfie’s phone, Event: VideoEnd",
+    "Video: “Float to Live”, Event: VideoStart",
+    "Video: “Float to Live”, Event: VideoEnd",
+    "Video: Respect the Water via the NWSF\u202f‘make the right call’, Event: VideoStart",
+    "Video: Respect the Water via the NWSF\u202f‘make the right call’, Event: VideoEnd",
+    "Video: “Seaside safety song”, Event: VideoStart",
+    "Video: “Seaside safety song”, Event: VideoEnd",
+    "Video: RNLI the breath test, Event: VideoStart",
+    "Video: RNLI the breath test, Event: VideoEnd",
+    "Video: RNLI Christmas bed-time story, Event: VideoStart",
+    "Video: RNLI Christmas bed-time story, Event: VideoEnd",
+    "Video: “RNLI: The heart-breaking story of Liam Hall”, Event: VideoStart",
+    "Video: “RNLI: The heart-breaking story of Liam Hall”, Event: VideoEnd"
+  ],
+  "participant_files": [
+    {
+      "id": "P03",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 3.xdf"
+    },
+    {
+      "id": "P05",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 5.xdf"
+    },
+    {
+      "id": "P06",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 6.xdf"
+    },
+    {
+      "id": "P07",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 7.xdf"
+    },
+    {
+      "id": "P08",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 8.xdf"
+    },
+    {
+      "id": "P09",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 9.xdf"
+    },
+    {
+      "id": "P10",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 10.xdf"
+    },
+    {
+      "id": "P11",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 11.xdf"
+    },
+    {
+      "id": "P12",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 12.xdf"
+    },
+    {
+      "id": "P13",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 13.xdf"
+    },
+    {
+      "id": "P14",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 14.xdf"
+    },
+    {
+      "id": "P15",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 15.xdf"
+    },
+    {
+      "id": "P16",
+      "file_path": "/mnt/Data/Raw/RNLI Data/participant 16.xdf"
+    }
+  ]
+}
